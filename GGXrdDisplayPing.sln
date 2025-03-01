@@ -9,26 +9,16 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GGXrdDisplayPing", "GGXrdDi
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
-		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Debug|x64.ActiveCfg = Debug|x64
-		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Debug|x64.Build.0 = Debug|x64
 		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Debug|x86.ActiveCfg = Debug|Win32
 		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Debug|x86.Build.0 = Debug|Win32
-		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Release|x64.ActiveCfg = Release|x64
-		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Release|x64.Build.0 = Release|x64
 		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Release|x86.ActiveCfg = Release|Win32
 		{7FBEABFB-AE96-4DF3-B86D-9E855303C800}.Release|x86.Build.0 = Release|Win32
-		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Debug|x64.ActiveCfg = Debug|x64
-		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Debug|x64.Build.0 = Debug|x64
 		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Debug|x86.ActiveCfg = Debug|Win32
 		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Debug|x86.Build.0 = Debug|Win32
-		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Release|x64.ActiveCfg = Release|x64
-		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Release|x64.Build.0 = Release|x64
 		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Release|x86.ActiveCfg = Release|Win32
 		{D535E67A-65A8-44CF-A836-58E42D5A9C14}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
