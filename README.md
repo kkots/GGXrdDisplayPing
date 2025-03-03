@@ -47,7 +47,7 @@ Instead of a patcher, you can add the injector into the game's .bat file.
 2) Open `BootGGXrd.bat` using Notepad.
 3) Place the text cursor at its very end, on a new line, and put `GGXrdDisplayPingInjector.exe -force` into it.
 4) Save and close the file.
-5) Copy and paste the `GGXrdDisplayPingInjector.exe` and `GGXrdDisplayPing.dll` files into the game's `...\Binaries\Win32\` folder.
+5) Copy and paste the `GGXrdDisplayPingInjector.exe` and `GGXrdDisplayPing.dll` files into the game's `\Binaries\Win32\` folder.
 
 When the game launches, it will now also launch the mod.
 
