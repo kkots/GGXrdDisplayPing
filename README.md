@@ -2,13 +2,13 @@
 
 For Guilty Gear Xrd Rev2 version 2211. Adds ping displays
 
-...on the Lobby List:
+...on the Lobby List:  
 ![Image could not be loaded](screen1.png)
 
-...on the Member List:
+...on the Member List:  
 ![Image could not be loaded](screen2.png)
 
-... under players' connection tier icons inside a lobby:
+... under players' connection tier icons inside a lobby:  
 ![Image could not be loaded](screen3.png)
 
 Works as of 2025 March 3.
