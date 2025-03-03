@@ -1,10 +1,10 @@
-
-#include <Windows.h>
+#include "pch.h"
 #include <VersionHelpers.h>
 #include <iostream>
 #include <string>
 #include <TlHelp32.h>
 #include <Psapi.h>
+#include "WError.h"
 
 #define DLL_NAME "GGXrdDisplayPing.dll"
 #define DLL_NAMEW L"GGXrdDisplayPing.dll"
@@ -12,32 +12,61 @@
 DWORD findOpenGgProcess();
 
 bool force = false;
-
-class WinError {
-public:
-	DWORD code = 0;
-	LPWSTR message = NULL;
-	~WinError() {
-		if (message) LocalFree(message);
-	}
-	WinError() {
-		code = GetLastError();
-		FormatMessageW(
-			FORMAT_MESSAGE_ALLOCATE_BUFFER |
-			FORMAT_MESSAGE_FROM_SYSTEM |
-			FORMAT_MESSAGE_IGNORE_INSERTS,
-			NULL,
-			code,
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-			(LPWSTR)(&message),
-			0, NULL);
-	}
-	WinError(const WinError& source) = delete;
-	WinError& operator=(const WinError& source) = delete;
-};
+ULONGLONG startTime = 0;
 
 std::wostream& operator<<(std::wostream& stream, const WinError& err) {
 	return stream << L"0x" << std::hex << err.code << L' ' << err.message << L'\n';
+}
+
+MODULEENTRY32W findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
+	HANDLE proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, procId);
+	if (!proc || proc == INVALID_HANDLE_VALUE) {
+		WinError winErr;
+		std::wcout << L"Failed to open process: " << winErr << std::endl;
+		return MODULEENTRY32W{0};
+	}
+	HMODULE hMod[1024];
+	DWORD bytesReturned = 0;
+	if (!EnumProcessModulesEx(proc, hMod, sizeof hMod, &bytesReturned, LIST_MODULES_32BIT)) {
+		WinError winErr;
+		std::wcout << L"EnumProcessModulesEx failed: " << winErr << std::endl;
+		CloseHandle(proc);
+		return MODULEENTRY32W{0};
+	}
+	if (bytesReturned == 0) {
+		WinError winErr;
+		std::wcout << L"EnumProcessModulesEx returned 0 bytes.\n";
+		CloseHandle(proc);
+		return MODULEENTRY32W{0};
+	}
+	wchar_t baseName[1024] { L'\0' };
+	int maxI = bytesReturned / sizeof HMODULE;
+	for (int i = 0; i < maxI; ++i) {
+		if (!GetModuleBaseNameW(proc, hMod[i], baseName, _countof(baseName))) {
+			WinError winErr;
+			std::wcout << L"GetModuleBaseNameW failed: " << winErr << std::endl;
+			CloseHandle(proc);
+			return MODULEENTRY32W{0};
+		}
+		if (_wcsicmp(baseName, DLL_NAMEW) == 0) {
+			MODULEINFO info;
+			if (!GetModuleInformation(proc, hMod[i], &info, sizeof MODULEINFO)) {
+				WinError winErr;
+				std::wcout << L"GetModuleInformation failed: " << winErr << std::endl;
+				CloseHandle(proc);
+				return MODULEENTRY32W{0};
+			}
+			
+			MODULEENTRY32W result;
+			result.modBaseAddr = (BYTE*)info.lpBaseOfDll;
+			CloseHandle(proc);
+			std::cout << "EnumProcessModulesEx workaround worked.\n";
+			return result;
+		}
+	}
+	std::cout << "EnumProcessModulesEx workaround worked.\n";
+	CloseHandle(proc);
+	return MODULEENTRY32W{0};
 }
 
 // Finds module (a loaded dll or exe itself) in the given process by name.
@@ -61,8 +90,9 @@ MODULEENTRY32W findModule(DWORD procId, const wchar_t* name, bool is32Bit) {
 			if (err.code == ERROR_BAD_LENGTH) {
 				continue;
 			} else {
-				std::wcout << L"Error in CreateToolhelp32Snapshot: " << err << std::endl;
-				return MODULEENTRY32W{ 0 };
+				std::wcout << L"Error in CreateToolhelp32Snapshot: " << err << std::endl << L"Is this running under Wine on Linux?\n";
+				std::cout << "Will attempt EnumProcessModulesEx workaround.\n";
+				return findModuleUsingEnumProcesses(procId, name);
 			}
 		}
 		else {
@@ -193,8 +223,19 @@ bool inject(HANDLE proc) {
 	std::cout << "Injecting...\n";
 	DWORD waitResult = WaitForSingleObject(newThread, INFINITE);
 	if (waitResult == WAIT_OBJECT_0) {
-		std::cout << "Injected successfully. You can launch this injector again to unload the DLL.\n";
-		return true;
+		DWORD exitCode = 0;
+		if (!GetExitCodeThread(newThread, &exitCode)) {
+			WinError winErr;
+			std::wcout << L"Failed to get the exit code of the injected thread: " << winErr << L'\n'
+				<< L"Injection probably failed.\n";
+			return false;
+		} else if (exitCode == 0) {
+			std::cout << "Injection failed.\n";
+			return false;
+		} else {
+			std::cout << "Injected successfully. You can launch this injector again to unload the DLL.\n";
+			return true;
+		}
 	} else if (waitResult == WAIT_FAILED) {
 		WinError winErr;
 		std::wcout << "WaitForSingleObject call failed: " << winErr << std::endl;
@@ -204,6 +245,44 @@ bool inject(HANDLE proc) {
 		return false;
 	}
 	
+}
+
+bool uninject(HANDLE proc, BYTE* modBaseAddr) {
+	
+	Cleanup cleanup;
+	
+	HANDLE newThread = CreateRemoteThread(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)(FreeLibrary), modBaseAddr, 0, nullptr);
+	if (newThread == INVALID_HANDLE_VALUE || newThread == NULL) {
+		WinError winErr;
+		std::wcout << L"Failed to create remote thread: " << winErr << std::endl;
+		return false;
+	}
+	cleanup.addHandle(newThread);
+	
+	std::cout << "Uninjecting...\n";
+	DWORD waitResult = WaitForSingleObject(newThread, INFINITE);
+	if (waitResult == WAIT_OBJECT_0) {
+		DWORD exitCode = 0;
+		if (!GetExitCodeThread(newThread, &exitCode)) {
+			WinError winErr;
+			std::wcout << L"Failed to get the exit code of the uninjecting thread: " << winErr << L'\n'
+				<< L"Uninjection probably failed.\n";
+			return false;
+		} else if (exitCode == 0) {
+			std::cout << "Uninjection failed.\n";
+			return false;
+		} else {
+			std::cout << "Uninjected successfully. You can launch this injector again to inject back the DLL.\n";
+			return true;
+		}
+	} else if (waitResult == WAIT_FAILED) {
+		WinError winErr;
+		std::wcout << "WaitForSingleObject call failed: " << winErr << std::endl;
+		return false;
+	} else {
+		std::wcout << "WaitForSingleObject call returned: " << waitResult << std::endl;
+		return false;
+	}
 }
 
 bool injectOrUninject(DWORD pid) {
@@ -221,7 +300,8 @@ bool injectOrUninject(DWORD pid) {
 	
 	MODULEENTRY32W module = findModule(pid, DLL_NAMEW, true);
 	if (module.modBaseAddr) {
-		std::cout << "The " DLL_NAME " is already injected into the process. Do you want to uninject it? (Type y/n and press Enter):\n";
+		std::wcout << L"The " DLL_NAME " is already injected into the process (0x" << std::hex << (DWORD)module.modBaseAddr << std::dec << L")."
+			L" Do you want to uninject it? (Type y/n and press Enter):\n";
 		while (true) {
 			if (!force) {
 				std::getline(std::wcin, lineContents);
@@ -229,15 +309,7 @@ bool injectOrUninject(DWORD pid) {
 				std::cout << "Force Y\n";
 			}
 			if (force || lineContents == L"y" || lineContents == L"Y") {
-				HANDLE newThread = CreateRemoteThread(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)(FreeLibrary), module.modBaseAddr, 0, nullptr);
-				if (newThread == INVALID_HANDLE_VALUE || newThread == NULL) {
-					WinError winErr;
-					std::wcout << L"Failed to create remote thread: " << winErr << std::endl;
-					break;
-				}
-				cleanup.addHandle(newThread);
-				std::cout << "DLL unloaded.\n";
-				return true;
+				return uninject(proc, module.modBaseAddr);
 			} else if (lineContents == L"n" || lineContents == L"N") {
 				std::cout << "The DLL won't be loaded a second time. No action will be taken.\n";
 				return true;
@@ -268,6 +340,7 @@ bool injectOrUninject(DWORD pid) {
 
 int wmain(int argc, wchar_t** argv)
 {
+	startTime = GetTickCount64();
 	
 	for (int i = 0; i < argc; ++i) {
 		if (_wcsicmp(*argv, L"-force") == 0) {
@@ -290,7 +363,9 @@ int wmain(int argc, wchar_t** argv)
 	HANDLE stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
     while (true) {
     	DWORD eventsRead;
-    	if (!PeekConsoleInputW(stdInHandle, records, 10, &eventsRead)) {  // thanks, stdlib, for NOT having a non-blocking std::cin.peek
+    	if (GetTickCount64() - startTime < 1000) {
+    		eventsRead = 0;
+    	} else if (!PeekConsoleInputW(stdInHandle, records, 10, &eventsRead)) {  // thanks, stdlib, for NOT having a non-blocking std::cin.peek
     		WinError err;
     		
     		std::cout << "Failed to call PeekConsoleInputW:\n"
@@ -312,14 +387,14 @@ int wmain(int argc, wchar_t** argv)
     	DWORD procId = findOpenGgProcess();
     	if (procId) {
     		std::cout << "Found PID: " << procId << '\n';
-    		bool fail = injectOrUninject(procId);
+    		bool success = injectOrUninject(procId);
     		
-    		if (!force || fail) {
+    		if (!force || !success) {
 	    		std::cout << "Press Enter to exit...\n";
 	    		std::wstring ignoreLine;
 	    		std::getline(std::wcin, ignoreLine);
     		}
-    		return fail ? 2 : 0;
+    		return success ? 0 : 2;
     	}
     	Sleep(333);
     }
