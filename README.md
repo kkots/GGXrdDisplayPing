@@ -13,6 +13,10 @@ For Guilty Gear Xrd Rev2 version 2211. Adds ping displays
 
 Works as of 2025 March 3.
 
+## Credits
+
+Big thanks to WorseThanYou (@worsety) for finding the function that draws player names in the lobbies!
+
 ## How to use
 
 For Windows:
