@@ -27,7 +27,13 @@ Download the .zip file from the Releases section and extract it. Give yourself p
 chmod u+x launch_GGXrdDisplayPingInjector_linux.sh
 ```
 
-In any order, launch the game and the `.sh` script. In the console window, type `y` and hit Enter. Hit Enter again to end the program.
+In any order, launch the game and the `.sh` script:
+
+ ```bash
+ ./launch_GGXrdDisplayPingInjector_linux.sh
+ ```
+ 
+ In the console window, type `y` and hit Enter. Hit Enter again to end the program.
 
 Uninjection does not work on Linux for unknown reason.
 
