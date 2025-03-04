@@ -56,3 +56,7 @@ Instead of a patcher, you can add the injector into the game's .bat file.
 When the game launches, it will now also launch the mod.
 
 On Linux, the game usually can be found in `~/.steam/debian-installation/steamapps/common/GUILTY GEAR Xrd -REVELATOR-/`.
+
+## Changelog
+
+2025 March 4: Version 1.1: Made changes to the injector to reduce the risk of being flagged as malware by Windows Defender. Made 64-bit injector work (was not working previously).

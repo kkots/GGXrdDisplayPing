@@ -35,8 +35,16 @@
     <ClInclude Include="framework.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\launch_GGXrdDisplayPingInjector_linux.sh" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GGXrdDisplayPingInjector.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>
