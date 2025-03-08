@@ -18,8 +18,6 @@ public:
 	bool attach(HMODULE hModule);
 	bool detach();
 	bool unfreeze();
-	static inline void setTrapFlag(DWORD* flags) { *flags |= (1 << 8); }
-	static inline void unsetTrapFlag(DWORD* flags) { *flags &= ~(1 << 8); }
 	bool eipIsIn(DWORD eip);
 	
 	bool includeThisModule = false;
@@ -27,9 +25,6 @@ public:
 	DWORD thisModuleEnd = 0;
 	DWORD eipStart = 0;
 	DWORD eipEnd = 0;
-	LPVOID exceptionHandle = NULL;
-	DWORD threadBeingSteppedId = 0;
-	HandleWrapper threadFinishedStepping = NULL;
 	FStringAssignmentOperator_wchar_t_t FStringAssignmentOperator_wchar_t = nullptr;
 	DrawTextWithIconsParams nameOverAvatarArgs;
 	// 0x1a0 - has an FString there

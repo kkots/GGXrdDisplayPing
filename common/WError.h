@@ -7,4 +7,5 @@ public:
 	WinError();
 	WinError(const WinError& source) = delete;
 	WinError& operator=(const WinError& source) = delete;
+	inline LPWSTR getMessage() const { return message; }
 };

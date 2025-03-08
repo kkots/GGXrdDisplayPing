@@ -46,8 +46,6 @@ extern "C" void __cdecl ConnectionTierIconInLobby();  // as _ConnectionTierIconI
 
 extern "C" drawTextWithIcons_t drawTextWithIcons = nullptr;
 
-LONG NTAPI vectoredExceptionHandler(_EXCEPTION_POINTERS *ExceptionInfo);
-
 bool Main::attach(HMODULE hModule) {
 	
 	if (!getModuleBoundsHandle(hModule, ".text", (const char**)&thisModuleStart, (const char**)&thisModuleEnd)) return false;
@@ -335,89 +333,35 @@ bool Main::unfreeze() {
 	return true;
 }
 
-// No one knows where we are, how we got here or what is even happening
-LONG NTAPI vectoredExceptionHandler(_EXCEPTION_POINTERS *ExceptionInfo) {
-	if (ExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP
-			&& GetCurrentThreadId() == mod.threadBeingSteppedId) {
-		if (mod.eipIsIn(ExceptionInfo->ContextRecord->Eip)) {
-			Main::setTrapFlag(&ExceptionInfo->ContextRecord->EFlags);
-			return EXCEPTION_CONTINUE_EXECUTION;
-		}
-		// Common sense: Is it safe to remove this exception handler from within the handler? What would happen after this function exits?
-		// Me: I don't know but I'll put this here of all places
-		RemoveVectoredExceptionHandler(mod.exceptionHandle);
-		// Microsoft: The handler should not call functions that acquire synchronization objects or allocate memory, because this can cause problems.
-		// Me: Naah
-		SetEvent(mod.threadFinishedStepping);
-		// People: Can a thread suspend itself? Is that even possible??
-		// Me: Let's find out
-		SuspendThread(GetCurrentThread());
-		// Some guy: My program is stuck in an infinite exception loop unless I increment EIP
-		// Me: Works on my machine
-		return EXCEPTION_CONTINUE_EXECUTION;
-	}
-	return EXCEPTION_CONTINUE_SEARCH;
-}
-
 // This approach can cause deadlocks if this thread attempts to take a mutex occupied by another thread which is also frozen
 bool Main::ensureThreadNotInRegion(HANDLE threadHandle, DWORD eipStart, DWORD eipEnd, bool includeThisModule) {
 	
 	CONTEXT ctx;
 	ctx.ContextFlags = CONTEXT_CONTROL;
 	
-	if (!GetThreadContext(threadHandle, &ctx)) {
-		WinError winErr;
-		LOG_ERROR("GetThreadContext failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-		return false;
-	}
-	
 	this->eipStart = eipStart;
 	this->eipEnd = eipEnd;
 	this->includeThisModule = includeThisModule;
 	
-	if (!eipIsIn(ctx.Eip)) return true;
-	
-	setTrapFlag(&ctx.EFlags);
-	if (!SetThreadContext(threadHandle, &ctx)) {
-		WinError winErr;
-		LOG_ERROR("SetThreadContext failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-		return false;
-	}
-	if (!threadFinishedStepping) {
-		threadFinishedStepping = CreateEventW(NULL, FALSE, FALSE, NULL);
-		if (!threadFinishedStepping) {
+	while (true) {
+		if (!GetThreadContext(threadHandle, &ctx)) {
 			WinError winErr;
-			LOG_ERROR("CreateEventW failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
+			LOG_ERROR("GetThreadContext failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
+			return false;
+		}
+		if (!eipIsIn(ctx.Eip)) return true;
+		if (!ResumeThread(threadHandle)) {
+			WinError winErr;
+			LOG_ERROR("ResumeThread failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
+			return false;
+		}
+		Sleep(1);
+		if (!SuspendThread(threadHandle)) {
+			WinError winErr;
+			LOG_ERROR("ResumeThread failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
 			return false;
 		}
 	}
-	threadBeingSteppedId = GetThreadId(threadHandle);
-	if (threadBeingSteppedId == 0) {
-		WinError winErr;
-		LOG_ERROR("GetThreadId failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-		return false;
-	}
-	exceptionHandle = AddVectoredExceptionHandler(1, vectoredExceptionHandler);
-	if (exceptionHandle == NULL) {
-		WinError winErr;
-		LOG_ERROR("AddVectoredExceptionHandler failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-		return false;
-	}
-	if (!ResumeThread(threadHandle)) {
-		WinError winErr;
-		LOG_ERROR("ResumeThread failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-		return false;
-	}
-	HANDLE handles[2] { threadFinishedStepping, threadHandle };
-	DWORD waitResult = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-	if (waitResult == WAIT_FAILED) {
-		WinError winErr;
-		LOG_ERROR("WaitForMultipleObjects failed: Error code 0x%x %ls\n", winErr.code, winErr.message)
-	}
-	if (waitResult != WAIT_OBJECT_0) {
-		RemoveVectoredExceptionHandler(mod.exceptionHandle);
-	}
-	if (waitResult == WAIT_FAILED) return false;
 	return true;
 }
 

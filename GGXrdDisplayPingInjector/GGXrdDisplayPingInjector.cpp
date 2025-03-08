@@ -1,108 +1,106 @@
 #include "pch.h"
-#include <VersionHelpers.h>
-#include <iostream>
+#include "resource.h"
+#include "Psapi.h"
 #include <string>
-#include <vector>
-#include <Psapi.h>
 #include "WError.h"
+#include "InjectorCommonOut.h"
+#include "ConsoleEmulator.h"
+#include "Version.h"
+#include <vector>
 
-bool force = false;
-ULONGLONG startTime = 0;
+InjectorCommonOut outputObject;
+extern void __cdecl GetLine(std::wstring& line);
+extern bool force;
+extern void pressAnyKeyBegin();
+extern bool isAnyKeyPressed();
+extern void pressAnyKeyEnd();
 
-DWORD findOpenGgProcess();
-
-std::wostream& operator<<(std::wostream& stream, const WinError& err) {
+inline InjectorCommonOut& operator<<(InjectorCommonOut& stream, const WinError& err) {
 	return stream << L"0x" << std::hex << err.code << L' ' << err.message << L'\n';
 }
+DWORD findOpenGgProcess();
 
-char ExeName[] = "\x92\x8f\xae\x51\xea\x8a\x0f\x5f\x23\x70\x44\xb7\x63\xd2\x55\x61\x6a\x00";
+char ExeName[] = "\x92\x8f\xae\x51\xea\x8a\x0f\x5f\x23\x70\x44\xb7\x63\xd2\x55\x61\x6a\x00";  // GuiltyGearXrd.exe
 ULONGLONG ExeKey = 0x411700002fbcULL;
 wchar_t exe[sizeof ExeName];  // single-byte string will get inflated to wide-char
 
-char DllName[] = "\xa6\x06\xb2\x60\x26\xcb\x26\x2c\x75\x65\x11\x09\xce\x34\xaf\x65\xee\xda\x50\x52\x81";
-ULONGLONG DllKey = 0x626600004e6bULL;
+char DllName[] = "\x7c\xb8\x3d\xc0\x08\x43\xda\x12\x79\xd6\xee\xc8\x40\x52\x6f\x7f\x90\x10\x1c\x74\x30";  // it says: GGXrdDisplayPing.dll
+ULONGLONG DllKey = 0x517e000056e9ULL;
 wchar_t dll[sizeof DllName];  // will get inflated
 
-char kernel32Name[] = "\x74\xe5\xa0\x26\x30\xac\x03\xa9\x31\x0c\x94\x12\x62";
+char kernel32Name[] = "\x74\xe5\xa0\x26\x30\xac\x03\xa9\x31\x0c\x94\x12\x62";  // KERNEL32.DLL
 ULONGLONG kernel32Key = 0x7c7b00001768ULL;
 HMODULE kernel32 = NULL;
 
-char user32Name[] = "\xd8\xac\x44\x11\xc8\xb2\x8a\xb8\x90\x0c\xa1";
+char user32Name[] = "\xd8\xac\x44\x11\xc8\xb2\x8a\xb8\x90\x0c\xa1";  // USER32.DLL
 ULONGLONG user32Key = 0x562200006c2cULL;
 HMODULE user32 = NULL;
 
-char PsapiName[] = "\x94\x99\x87\x60\x59\x1e\x62\x2b\x28\x09";
+char PsapiName[] = "\x94\x99\x87\x60\x59\x1e\x62\x2b\x28\x09";  // PSAPI.DLL
 ULONGLONG PsapiKey = 0x4e8600006cccULL;
 HMODULE Psapi = NULL;
 
-char OpenProcessName[] = "\xe3\xd2\x1a\xd1\x06\xd3\x1f\xce\xf2\x85\x53\x03";
+char OpenProcessName[] = "\xe3\xd2\x1a\xd1\x06\xd3\x1f\xce\xf2\x85\x53\x03";  // OpenProcess
 ULONGLONG OpenProcessKey = 0x4d7d00003d60ULL;
 HANDLE (__stdcall*OpenProcessPtr)(DWORD, BOOL, DWORD) = nullptr;
 
-char CreateRemoteThreadName[] = "\x4e\xe1\x40\x98\x8b\x9a\x6e\x9b\xea\xf5\x0d\x70\x50\x93\x6d\x8a\x92\x1a\x10";
+char CreateRemoteThreadName[] = "\x4e\xe1\x40\x98\x8b\x9a\x6e\x9b\xea\xf5\x0d\x70\x50\x93\x6d\x8a\x92\x1a\x10";  // CreateRemoteThread
 ULONGLONG CreateRemoteThreadKey = 0x4de200000663ULL;
 HANDLE (__stdcall*CreateRemoteThreadPtr)(HANDLE, LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD) = nullptr;
 
-char VirtualAllocExName[] = "\x28\x49\x78\x5b\x33\xd0\x8d\x72\xaa\x6d\x9f\xe6\x0a\x28\x44";
+char VirtualAllocExName[] = "\x28\x49\x78\x5b\x33\xd0\x8d\x72\xaa\x6d\x9f\xe6\x0a\x28\x44";  // VirtualAllocEx
 ULONGLONG VirtualAllocExKey = 0x7c7d00002b16ULL;
 LPVOID (__stdcall*VirtualAllocExPtr)(HANDLE, LPVOID, SIZE_T, DWORD, DWORD) = nullptr;
 
-char ReadProcessMemoryName[] = "\x88\xe2\x22\x7a\x29\x66\x97\xe7\x62\x7a\x25\x4d\x99\x12\xbe\x91\x7f\xb0";
+char ReadProcessMemoryName[] = "\x88\xe2\x22\x7a\x29\x66\x97\xe7\x62\x7a\x25\x4d\x99\x12\xbe\x91\x7f\xb0";  // ReadProcessMemory
 ULONGLONG ReadProcessMemoryKey = 0x4e3100003d2fULL;
 BOOL (__stdcall*ReadProcessMemoryPtr)(HANDLE, LPCVOID, LPVOID, SIZE_T, SIZE_T*) = nullptr;
 
-char WriteProcessMemoryName[] = "\x38\x82\x7a\xea\x78\x03\xfd\xdc\x6c\x8f\xb0\xe2\x97\x92\xae\x67\xb7\x88\x33";
+char WriteProcessMemoryName[] = "\x38\x82\x7a\xea\x78\x03\xfd\xdc\x6c\x8f\xb0\xe2\x97\x92\xae\x67\xb7\x88\x33";  // WriteProcessMemory
 ULONGLONG WriteProcessMemoryKey = 0x23200000acdULL;
 BOOL (__stdcall*WriteProcessMemoryPtr)(HANDLE, LPVOID, LPCVOID, SIZE_T, SIZE_T*) = nullptr;
 
-char VirtualFreeExName[] = "\x96\x14\x4c\x79\x7a\xd1\x32\xc6\x03\xb8\xbb\x1a\x7c\x00";
+char VirtualFreeExName[] = "\x96\x14\x4c\x79\x7a\xd1\x32\xc6\x03\xb8\xbb\x1a\x7c\x00";  // VirtualFreeEx
 ULONGLONG VirtualFreeExKey = 0x24c0000029a5ULL;
 BOOL (__stdcall*VirtualFreeExPtr)(HANDLE, LPVOID, SIZE_T, DWORD) = nullptr;
 
-char EnumProcessModulesExName[] = "\x21\x6c\xea\x5a\x30\xb1\xeb\xb2\xeb\x95\x6a\xed\x66\x5d\x0b\xe2\x59\x3d\x2d\x75\x01";
+char EnumProcessModulesExName[] = "\x21\x6c\xea\x5a\x30\xb1\xeb\xb2\xeb\x95\x6a\xed\x66\x5d\x0b\xe2\x59\x3d\x2d\x75\x01";  // EnumProcessModulesEx
 ULONGLONG EnumProcessModulesExKey = 0x14060000408fULL;
 BOOL (__stdcall*EnumProcessModulesExPtr)(HANDLE, HMODULE*, DWORD, LPDWORD, DWORD) = nullptr;
 
-char GetModuleBaseNameWName[] = "\xa3\x56\x89\x1f\x9e\xd5\x30\xac\x63\xee\x1b\x15\xb9\x29\x30\xe3\xc2\xb5\x01";
+char GetModuleBaseNameWName[] = "\xa3\x56\x89\x1f\x9e\xd5\x30\xac\x63\xee\x1b\x15\xb9\x29\x30\xe3\xc2\xb5\x01";  // GetModuleBaseNameW
 ULONGLONG GetModuleBaseNameWKey = 0x4589000012ecULL;
 DWORD (__stdcall*GetModuleBaseNameWPtr)(HANDLE, HMODULE, LPWSTR, DWORD) = nullptr;
 
-char GetModuleFileNameExWName[] = "\x96\x9a\xa1\x8e\xbf\x86\x05\x93\xea\xcc\x30\xe7\xc4\x4b\xe6\xf2\x3a\x89\x0d\x87\x84";
+char GetModuleFileNameExWName[] = "\x96\x9a\xa1\x8e\xbf\x86\x05\x93\xea\xcc\x30\xe7\xc4\x4b\xe6\xf2\x3a\x89\x0d\x87\x84";  // GetModuleFileNameExW
 ULONGLONG GetModuleFileNameExWKey = 0x326b0000027dULL;
 DWORD (__stdcall*GetModuleFileNameExWPtr)(HANDLE, HMODULE, LPWSTR, DWORD) = nullptr;
 
-char GetModuleInformationName[] = "\xac\x65\xb9\x62\x6c\x62\xad\xf2\x9b\xba\x94\xad\x1f\x49\x86\xa3\x5c\x57\xa7\x93\x94";
+char GetModuleInformationName[] = "\xac\x65\xb9\x62\x6c\x62\xad\xf2\x9b\xba\x94\xad\x1f\x49\x86\xa3\x5c\x57\xa7\x93\x94";  // GetModuleInformation
 ULONGLONG GetModuleInformationKey = 0x60a000073a5ULL;
 BOOL (__stdcall*GetModuleInformationPtr)(HANDLE, HMODULE, LPMODULEINFO, DWORD) = nullptr;
 
-char CloseHandleName[] = "\xa4\x61\xb7\xa6\x17\x60\xaf\x10\xa6\xb3\x92\x84";
+char CloseHandleName[] = "\xa4\x61\xb7\xa6\x17\x60\xaf\x10\xa6\xb3\x92\x84";  // CloseHandle
 ULONGLONG CloseHandleKey = 0x6a560000698dULL;
 BOOL (__stdcall*CloseHandlePtr)(HANDLE) = nullptr;
 
-char LoadLibraryWName[] = "\x54\x24\x82\xf3\xc8\x9c\x4f\xb4\xe5\xa2\xc9\xe3\x00";
+char LoadLibraryWName[] = "\x54\x24\x82\xf3\xc8\x9c\x4f\xb4\xe5\xa2\xc9\xe3\x00";  // LoadLibrary
 ULONGLONG LoadLibraryWKey = 0x43fa00005955ULL;
 HMODULE (__stdcall*LoadLibraryWPtr)(LPCWSTR) = nullptr;
 
-char FreeLibraryName[] = "\x88\x40\x16\x47\xa3\x9e\x15\x48\x96\x4d\x7c\x95";
+char FreeLibraryName[] = "\x88\x40\x16\x47\xa3\x9e\x15\x48\x96\x4d\x7c\x95";  // FreeLibrary
 ULONGLONG FreeLibraryKey = 0x3fdc00003157ULL;
 BOOL (__stdcall*FreeLibraryPtr)(HMODULE) = nullptr;
 
-char FindWindowWName[] = "\x06\x68\x97\x7b\xc6\x1c\x17\x38\x77\x7f\x27\x03";
+char FindWindowWName[] = "\x06\x68\x97\x7b\xc6\x1c\x17\x38\x77\x7f\x27\x03";  // FindWindowW
 ULONGLONG FindWindowWKey = 0x4abb00006e71ULL;
 HWND (__stdcall*FindWindowWPtr)(LPCWSTR, LPCWSTR) = nullptr;
 
-char GetWindowThreadProcessIdName[] = "\x06\x50\xb6\xef\xb8\x4d\xf8\xf9\x1a\x88\xde\x99\x06\x17\xc4\x85\xcc\xa5\xbc\xc2\x9e\x0c\x37\x2b\x2a";
+char GetWindowThreadProcessIdName[] = "\x06\x50\xb6\xef\xb8\x4d\xf8\xf9\x1a\x88\xde\x99\x06\x17\xc4\x85\xcc\xa5\xbc\xc2\x9e\x0c\x37\x2b\x2a";  // GetWindowThreadProcessId
 ULONGLONG GetWindowThreadProcessIdKey = 0x2bd500006949ULL;
 DWORD (__stdcall*GetWindowThreadProcessIdPtr)(HWND, LPDWORD) = nullptr;
 
-char WaitForSingleObjectName[] = "\xa5\xc4\x96\xe6\x02\xee\x65\xe7\xf0\xf1\x9a\x9a\xd0\x1b\x12\x10\x76\x8f\xf3\x68";
-ULONGLONG WaitForSingleObjectKey = 0x713c00005c56ULL;
-DWORD (__stdcall*WaitForSingleObjectPtr)(HANDLE, DWORD) = nullptr;
-
-char GetExitCodeThreadName[] = "\xa3\x98\x38\x2b\xf8\xf4\x88\xa4\xd8\xfa\xc6\x86\x68\xc0\x48\x54\x63\x49";
-ULONGLONG GetExitCodeThreadKey = 0x6036000010c6ULL;
-BOOL (__stdcall*GetExitCodeThreadPtr)(HANDLE, LPDWORD) = nullptr;
-
+// this is for your use at home
 unsigned long long generateNewKey() {
 	static bool sranded = false;
 	if (!sranded) {
@@ -209,6 +207,15 @@ void scramble(std::vector<char>& vec, unsigned long long key) {
 	}
 }
 
+template<size_t size>
+inline const char* unscramble(std::vector<char>& vec, const char(&txt)[size], ULONGLONG key) {
+	vec.resize(size - 1);
+	memcpy(vec.data(), txt, size - 1);
+	scramble(vec, key);
+	return vec.data();
+}
+
+// this is for your use at home
 void printByteVec(const std::vector<char>& vec) {
 	printf("\"");
 	bool isFirst = false;
@@ -218,6 +225,7 @@ void printByteVec(const std::vector<char>& vec) {
 	printf("\"\n");
 }
 
+// this is for your use at home
 void printText(const std::vector<char>& vec) {
 	printf("\"");
 	for (char c : vec) {
@@ -233,15 +241,7 @@ void printText(const std::vector<char>& vec) {
 	printf("\"\n");
 }
 
-template<size_t size>
-inline const char* unscramble(std::vector<char>& vec, const char(&txt)[size], ULONGLONG key) {
-	vec.resize(size - 1);
-	memcpy(vec.data(), txt, size - 1);
-	scramble(vec, key);
-	return vec.data();
-}
-
-#if defined( _WIN64 )  // this check wasn't added because there're problems otherwise. I added it simply because we do not need these functions in 64-bit release
+#if defined( _WIN64 )  // this check wasn't added because there're problems otherwise. I added it simply because we do not need these functions in 32-bit release
 /// <summary>
 /// Finds the address which holds a pointer to a function with the given name imported from the given DLL,
 /// in a given 32-bit process.
@@ -279,13 +279,13 @@ DWORD findImportedFunction(HANDLE proc, const char* dll, const char* function) {
 	CloseHandlePtr = (BOOL (__stdcall*)(HANDLE))GetProcAddress(kernel32, unscramble(vec, CloseHandleName, CloseHandleKey));
 	if (!(*EnumProcessModulesExPtr)(proc, &hModule, sizeof HMODULE, &bytesReturned, LIST_MODULES_32BIT)) {
 		WinError winErr;
-		std::wcout << L"Failed to enum modules: " << winErr << std::endl;
+		outputObject << L"Failed to enum modules: " << winErr << std::endl;
 		(*CloseHandlePtr)(proc);
 		return 0;
 	}
 	if (bytesReturned == 0) {
 		WinError winErr;
-		std::wcout << L"The process has 0 modules.\n";
+		outputObject << L"The process has 0 modules.\n";
 		(*CloseHandlePtr)(proc);
 		return 0;
 	}
@@ -316,7 +316,7 @@ DWORD findImportedFunction(HANDLE proc, const char* dll, const char* function) {
 	#define readDword(addr, into) \
 		if (!(*ReadProcessMemoryPtr)(proc, (LPCVOID)(addr), &into, 4, &bytesRead)) { \
 			WinError winErr; \
-			std::wcout << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)(addr) << std::dec \
+			outputObject << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)(addr) << std::dec \
 				<< L": " << winErr << L".\n"; \
 			return 0; \
 		}
@@ -355,7 +355,7 @@ DWORD findImportedFunction(HANDLE proc, const char* dll, const char* function) {
 		foreignName.resize(dllStrLen + 1);
 		if (!(*ReadProcessMemoryPtr)(proc, (LPCVOID)(dllName), foreignName.data(), foreignName.size(), &bytesRead)) {
 			WinError winErr;
-			std::wcout << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)dllName << std::dec
+			outputObject << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)dllName << std::dec
 				<< L": " << winErr << L".\n";
 			return 0;
 		}
@@ -378,7 +378,7 @@ DWORD findImportedFunction(HANDLE proc, const char* dll, const char* function) {
 			foreignName.resize(functionStrLen + 1);
 			if (!(*ReadProcessMemoryPtr)(proc, (LPCVOID)(&importByName->name), foreignName.data(), foreignName.size(), &bytesRead)) {
 				WinError winErr;
-				std::wcout << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)&importByName->name << std::dec
+				outputObject << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)&importByName->name << std::dec
 					<< L": " << winErr << L".\n";
 				return 0;
 			}
@@ -411,7 +411,7 @@ DWORD findImportedFunctionExtra(HANDLE proc, const char* dll, const char* functi
 	
 	if (!(*ReadProcessMemoryPtr)(proc, (LPCVOID)(foundFunc), &resultDword, 4, &bytesRead)) {
 		WinError winErr;
-		std::wcout << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)(foundFunc) << std::dec
+		outputObject << L"Failed to read memory from the process at memory location 0x" << std::hex << (DWORD)(foundFunc) << std::dec
 			<< L": " << winErr << L".\n";
 		return 0;
 	}
@@ -448,7 +448,7 @@ DWORD findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
 	HANDLE proc = (*OpenProcessPtr)(access, FALSE, arg3);
 	if (!proc || proc == INVALID_HANDLE_VALUE) {
 		WinError winErr;
-		std::wcout << L"Failed to open process: " << winErr << std::endl;
+		outputObject << L"Failed to open process: " << winErr << std::endl;
 		return 0;
 	}
 	
@@ -472,13 +472,13 @@ DWORD findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
 	CloseHandlePtr = (BOOL (__stdcall*)(HANDLE))GetProcAddress(kernel32, unscramble(vec, CloseHandleName, CloseHandleKey));
 	if (!(*EnumProcessModulesExPtr)(proc, hMod, sizeof hMod, &bytesReturned, LIST_MODULES_32BIT)) {
 		WinError winErr;
-		std::wcout << L"Failed to enum modules: " << winErr << std::endl;
+		outputObject << L"Failed to enum modules: " << winErr << std::endl;
 		(*CloseHandlePtr)(proc);
 		return 0;
 	}
 	if (bytesReturned == 0) {
 		WinError winErr;
-		std::wcout << L"The process has 0 modules.\n";
+		outputObject << L"The process has 0 modules.\n";
 		(*CloseHandlePtr)(proc);
 		return 0;
 	}
@@ -513,7 +513,7 @@ DWORD findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
 	for (int i = 0; i < maxI; ++i) {
 		if (!(*GetModuleBaseNameWPtr)(proc, hMod[i], baseName, _countof(baseName))) {
 			WinError winErr;
-			std::wcout << L"Failed to get the name of the module due to error: " << winErr << std::endl;
+			outputObject << L"Failed to get the name of the module due to error: " << winErr << std::endl;
 			(*CloseHandlePtr)(proc);
 			return 0;
 		}
@@ -521,7 +521,7 @@ DWORD findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
 			MODULEINFO info;
 			if (!(*GetModuleInformationPtr)(proc, hMod[i], &info, sizeof MODULEINFO)) {
 				WinError winErr;
-				std::wcout << L"Failed to get module information: " << winErr << std::endl;
+				outputObject << L"Failed to get module information: " << winErr << std::endl;
 				(*CloseHandlePtr)(proc);
 				return 0;
 			}
@@ -534,99 +534,197 @@ DWORD findModuleUsingEnumProcesses(DWORD procId, const wchar_t* name) {
 	return 0;
 }
 
-void printTooSmall() {
-	DWORD res = GetCurrentDirectoryW(0, NULL);
-	std::wstring path(res - 1, L'\0');
-	GetCurrentDirectoryW(res, &path.front());
-	std::wcout << "The working directory path '" << path << "' + '\\' + '" << dll << "' does not fit into " << MAX_PATH - 1 << " characters.\n";
-}
-
-bool constructPath(wchar_t* dllPath) {
-	#define exitTooSmall { printTooSmall(); return false; }
-	DWORD res = GetCurrentDirectoryW(MAX_PATH, dllPath);
-	if (dllPath[0] == L'\0' && res) exitTooSmall
-	if (!res) {
-		WinError err;
-		std::wcout << "Failed to call GetCurrentDirectoryW: " << err << std::endl;
-		return false;
-	}
-	// wcscat_s crashes when buffer is too small
-	if (dllPath[MAX_PATH - 1] != L'\0') exitTooSmall
-	wcscat_s(dllPath, MAX_PATH, L"\\");
-	if (wcslen(dllPath) + wcslen(dll) >= MAX_PATH) exitTooSmall
-	wcscat_s(dllPath, MAX_PATH, dll);
-	return true;
-	#undef exitTooSmall
-}
-
-struct Cleanup {
-	LPVOID virtualMem = NULL;
-	HANDLE proc = NULL;
-	~Cleanup() {
-		if (virtualMem) {
-			VirtualFreeEx(proc, virtualMem, 0, MEM_RELEASE);
-		}
-		for (int i = count - 1; i >= 0; --i) {
-			CloseHandle(handles[i]);
-		}
-	}
-	void addHandle(HANDLE hndl) {
-		if (count >= _countof(handles)) {
-			std::cout << "Cannot clean up more than " << _countof(handles) << " handles.\n";
-			return;
-		}
-		handles[count++] = hndl;
-	}
-private:
-	HANDLE handles[10] { NULL };
-	int count = 0;
-};
-
-bool inject(HANDLE proc) {
-	
-	Cleanup cleanup;
-	cleanup.proc = proc;
+bool injectorTask(DWORD procId) {
 	std::vector<char> vec;
 	
-	wchar_t dllPath[MAX_PATH] { L'\0' };
-	if (!constructPath(dllPath)) return false;
+	struct Cleanup {
+		std::vector<char>& vec;
+		HANDLE proc = NULL;
+		LPVOID buf = NULL;
+		std::vector<HANDLE> handlesToClose;
+		~Cleanup() {
+			
+			for (HANDLE h : handlesToClose) {
+				(*CloseHandlePtr)(h);
+			}
+			
+			if (proc && proc != INVALID_HANDLE_VALUE) {
+				if (buf) {
+					VirtualFreeExPtr = (BOOL (__stdcall*)(HANDLE, LPVOID, SIZE_T, DWORD))
+						GetProcAddress(kernel32, unscramble(vec, VirtualFreeExName, VirtualFreeExKey));
+					(*VirtualFreeExPtr)(proc, buf, 0, MEM_RELEASE);
+				}
+				(*CloseHandlePtr)(proc);
+			}
+		}
+	} cleanup{vec};
 	
-	std::wcout << L"Dll path: " << dllPath << std::endl;
 	
-	DWORD dllAtrib = GetFileAttributesW(dllPath);
+	if (!kernel32) {
+		kernel32 = LoadLibraryA(unscramble(vec, kernel32Name, kernel32Key));
+	}
+	OpenProcessPtr = (HANDLE (__stdcall*)(DWORD, BOOL, DWORD))GetProcAddress(kernel32, unscramble(vec, OpenProcessName, OpenProcessKey));
+	CloseHandlePtr = (BOOL (__stdcall*)(HANDLE))GetProcAddress(kernel32, unscramble(vec, CloseHandleName, CloseHandleKey));
+	
+	vec.resize(4);
+	
+	// throwing off sigscans
+	DWORD value = PROCESS_ALL_ACCESS;
+	memcpy(vec.data(), &value, 4);
+	scramble(vec, 988787287);
+	scramble(vec, 988787287);
+	DWORD access = *(DWORD*)vec.data();
+	
+	memcpy(vec.data(), &procId, 4);
+	scramble(vec, 5775793);
+	scramble(vec, 5775793);
+	DWORD arg3 = *(DWORD*)vec.data();
+	
+	cleanup.proc = (*OpenProcessPtr)(access, FALSE, arg3);
+	if (!cleanup.proc || cleanup.proc == INVALID_HANDLE_VALUE) {
+		WinError winErr;
+		outputObject << L"Failed to open process: " << winErr << std::endl;
+		return false;
+	}
+	
+	wchar_t path[MAX_PATH];
+	
+	GetModuleFileNameExWPtr = (DWORD (__stdcall*)(HANDLE, HMODULE, LPWSTR, DWORD))GetProcAddress(kernel32, unscramble(vec, GetModuleFileNameExWName, GetModuleFileNameExWKey));
+	if (!GetModuleFileNameExWPtr) {
+		if (!Psapi) {
+			Psapi = LoadLibraryA(unscramble(vec, PsapiName, PsapiKey));
+			GetModuleFileNameExWPtr = (DWORD (__stdcall*)(HANDLE, HMODULE, LPWSTR, DWORD))GetProcAddress(Psapi, unscramble(vec, GetModuleFileNameExWName, GetModuleFileNameExWKey));
+		}
+	}
+	if ((*GetModuleFileNameExWPtr)(cleanup.proc, nullptr, path, MAX_PATH) == 0) {
+		WinError winErr;
+		outputObject << L"Failed to get path of the process's executable: " << winErr << std::endl;
+		return false;
+	}
+	const wchar_t* ptr = nullptr;
+	const wchar_t* ptrNext = path - 1;
+	do {
+		ptr = ptrNext + 1;
+		ptrNext = wcschr(ptr, L'\\');
+	} while (ptrNext);
+	if (wcscmp(ptr, exe) != 0) {
+		WinError winErr;
+		outputObject << L"The name of the found process is not '" << exe << L"\n";;
+		return false;
+	}
+	
+	outputObject << L"The name of the process: " << exe << std::endl;
+
+	DWORD modBaseAddr = findModuleUsingEnumProcesses(procId, dll);
+	if (modBaseAddr) {
+		while (true) {
+			outputObject << L"The dll is already loaded into the application. Do you want to unload it? (Type y/n):\n";
+			std::wstring lineContents;
+			if (force) {
+				outputObject << L"Force Y\n";
+				lineContents = L"y";
+			} else {
+				GetLine(lineContents);
+			}
+			if (lineContents == L"y" || lineContents == L"Y") {
+				
+				CreateRemoteThreadPtr = (HANDLE (__stdcall*)(HANDLE, LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD))
+					GetProcAddress(kernel32, unscramble(vec, CreateRemoteThreadName, CreateRemoteThreadKey));
+				
+				#if defined( _WIN64 )
+				std::vector<char> FreeLibraryVec;
+				unscramble(FreeLibraryVec, FreeLibraryName, FreeLibraryKey);
+				FreeLibraryPtr = (BOOL(__stdcall*)(HMODULE))findImportedFunctionExtra(cleanup.proc, unscramble(vec, kernel32Name, kernel32Key), FreeLibraryVec.data());
+				if (!FreeLibraryPtr) {
+					WinError winErr;
+					outputObject << L"Failed to find free library function in the process.\n";
+					return false;
+				}
+				#else
+				// I know the address is always the same
+				// I'm trying to throw off sigscans
+				FreeLibraryPtr = (BOOL(__stdcall*)(HMODULE))GetProcAddress(kernel32, unscramble(vec, FreeLibraryName, FreeLibraryKey));
+				#endif
+				HANDLE newThread = (*CreateRemoteThreadPtr)(cleanup.proc, nullptr, 0, (LPTHREAD_START_ROUTINE)((DWORD)FreeLibraryPtr), (LPVOID)modBaseAddr, 0, nullptr);
+				if (newThread == INVALID_HANDLE_VALUE || newThread == 0) {
+					WinError winErr;
+					outputObject << L"Failed to create remote thread: " << winErr.getMessage() << std::endl;
+					return false;
+				}
+				cleanup.handlesToClose.push_back(newThread);
+				outputObject << L"DLL unloaded.\n";
+				return true;
+			}
+			else if (lineContents == L"n" || lineContents == L"N") {
+				outputObject << L"The DLL won't be loaded a second time. No action will be taken.\n";
+				return true;
+			}
+		}
+		return true;
+	}
+	else {
+		while (true) {
+			outputObject << L"The dll is not yet loaded into the application. Do you want to load it? (Type y/n):\n";
+			std::wstring lineContents;
+			if (force) {
+				outputObject << L"Force Y\n";
+				lineContents = L"y";
+			} else {
+				GetLine(lineContents);
+			}
+			if (lineContents == L"y" || lineContents == L"Y") {
+				break;
+			}
+			else if (lineContents == L"n" || lineContents == L"N") {
+				outputObject << L"The DLL won't be loaded.\n";
+				return true;
+			}
+		}
+	}
+
+	wchar_t dll_path[MAX_PATH];
+	GetCurrentDirectoryW(MAX_PATH, dll_path);
+	wcscat_s(dll_path, MAX_PATH, L"\\");
+	wcscat_s(dll_path, MAX_PATH, dll);
+	outputObject << L"Dll path: " << dll_path << std::endl;
+	DWORD dllAtrib = GetFileAttributesW(dll_path);
 	if (dllAtrib == INVALID_FILE_ATTRIBUTES) {
 		WinError winErr;
-		std::wcout << winErr << std::endl;
+		outputObject << winErr.getMessage() << std::endl;
 		return false;
 	}
 	if ((dllAtrib & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-		std::cout << "The found DLL is actually a directory. Terminating.\n";
+		outputObject << L"The found DLL is actually a directory. Terminating.\n";
 		return false;
 	}
-	
-	SIZE_T size = (wcslen(dllPath) + 1) * sizeof(wchar_t);
-	
+
+	const auto size = (wcslen(dll_path) + 1) * sizeof(wchar_t);
 	VirtualAllocExPtr = (LPVOID (__stdcall*)(HANDLE, LPVOID, SIZE_T, DWORD, DWORD))
 		GetProcAddress(kernel32, unscramble(vec, VirtualAllocExName, VirtualAllocExKey));
 	
-	LPVOID buf = (*VirtualAllocExPtr)(proc, nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	if (buf == NULL) {
-		WinError winErr;
-		std::wcout << L"Failed to allocate memory: " << winErr << "\n";
+	vec.resize(4);
+	value = MEM_RESERVE | MEM_COMMIT;
+	memcpy(vec.data(), &value, 4);
+	scramble(vec, 7489298);
+	scramble(vec, 7489298);
+	DWORD newVal = *(DWORD*)vec.data();
+	
+	cleanup.buf = (*VirtualAllocExPtr)(cleanup.proc, nullptr, size, newVal, PAGE_READWRITE);
+	if (cleanup.buf == NULL) {
+		outputObject << L"Failed to allocate memory.\n";
 		return false;
 	}
-	cleanup.virtualMem = buf;
-	std::cout << "Allocated memory: " << buf << std::endl;
-	
+	outputObject << L"Allocated memory: " << cleanup.buf << std::endl;
 	WriteProcessMemoryPtr = (BOOL (__stdcall*)(HANDLE, LPVOID, LPCVOID, SIZE_T, SIZE_T*))
 		GetProcAddress(kernel32, unscramble(vec, WriteProcessMemoryName, WriteProcessMemoryKey));
 	
-	if (!(*WriteProcessMemoryPtr)(proc, buf, dllPath, size, nullptr)) {
-		WinError winErr;
-		std::wcout << L"Failed to write memory: " << winErr << "\n";
+	if ((*WriteProcessMemoryPtr)(cleanup.proc, cleanup.buf, dll_path, size, nullptr)) {
+		outputObject << L"Wrote memory successfully.\n";
+	}
+	else {
+		outputObject << L"Failed to write memory.\n";
 		return false;
 	}
-	std::cout << "Wrote memory successfully.\n";
 	
 	CreateRemoteThreadPtr = (HANDLE (__stdcall*)(HANDLE, LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD))
 		GetProcAddress(kernel32, unscramble(vec, CreateRemoteThreadName, CreateRemoteThreadKey));
@@ -637,185 +735,28 @@ bool inject(HANDLE proc) {
 	LoadLibraryWPtr = (HMODULE(__stdcall*)(LPCWSTR))findImportedFunctionExtra(cleanup.proc, unscramble(vec, kernel32Name, kernel32Key), LoadLibraryWVec.data());
 	if (!LoadLibraryWPtr) {
 		WinError winErr;
-		std::wcout << L"Failed to find load library w function in the process.\n";
+		outputObject << L"Failed to find load library w function in the process.\n";
 		return false;
 	}
 	#else
 	LoadLibraryWPtr = (HMODULE(__stdcall*)(LPCWSTR))GetProcAddress(kernel32, unscramble(vec, LoadLibraryWName, LoadLibraryWKey));
 	#endif
-	HANDLE newThread = (*CreateRemoteThreadPtr)(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)(LoadLibraryWPtr), buf, 0, nullptr);
-	if (newThread == INVALID_HANDLE_VALUE || newThread == NULL) {
+	HANDLE newThread = (*CreateRemoteThreadPtr)(cleanup.proc, nullptr, 0, (LPTHREAD_START_ROUTINE)(LoadLibraryWPtr), cleanup.buf, 0, nullptr);
+	if (newThread == INVALID_HANDLE_VALUE || newThread == 0) {
 		WinError winErr;
-		std::wcout << L"Failed to create remote thread: " << winErr << std::endl;
+		outputObject << L"Failed to create remote thread: " << winErr.getMessage() << std::endl;
 		return false;
 	}
-	cleanup.addHandle(newThread);
-	
-	std::cout << "Injecting...\n";
-	WaitForSingleObjectPtr = (DWORD(__stdcall*)(HANDLE,DWORD))GetProcAddress(kernel32, unscramble(vec, WaitForSingleObjectName, WaitForSingleObjectKey));
-	DWORD waitResult = (*WaitForSingleObjectPtr)(newThread, INFINITE);
-	if (waitResult == WAIT_OBJECT_0) {
-		DWORD exitCode = 0;
-		GetExitCodeThreadPtr = (BOOL (__stdcall*)(HANDLE, LPDWORD))GetProcAddress(kernel32, unscramble(vec, GetExitCodeThreadName, GetExitCodeThreadKey));
-		if (!(*GetExitCodeThreadPtr)(newThread, &exitCode)) {
-			WinError winErr;
-			std::wcout << L"Failed to get the exit code of the injected thread: " << winErr << L'\n'
-				<< L"Injection probably failed.\n";
-			return false;
-		} else if (exitCode == 0) {
-			std::cout << "Injection failed.\n";
-			return false;
-		} else {
-			std::cout << "Injected successfully. You can launch this injector again to unload the DLL.\n";
-			return true;
-		}
-	} else if (waitResult == WAIT_FAILED) {
-		WinError winErr;
-		std::wcout << "Failed to wait for the injected thread: " << winErr << std::endl;
-		return false;
-	} else {
-		std::wcout << "The wait for the injected thread returned: " << waitResult << std::endl;
-		return false;
-	}
-	
+	cleanup.handlesToClose.push_back(newThread);
+	outputObject << L"Injected successfully. You can launch this injector again to unload the DLL.\n";
+	return true;
 }
 
-bool uninject(HANDLE proc, DWORD modBaseAddr) {
-	
-	Cleanup cleanup;
-	cleanup.proc = proc;
-	std::vector<char> vec;
-	
-	CreateRemoteThreadPtr = (HANDLE (__stdcall*)(HANDLE, LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD))
-		GetProcAddress(kernel32, unscramble(vec, CreateRemoteThreadName, CreateRemoteThreadKey));
-	
-	#if defined( _WIN64 )
-	std::vector<char> FreeLibraryVec;
-	unscramble(FreeLibraryVec, FreeLibraryName, FreeLibraryKey);
-	FreeLibraryPtr = (BOOL(__stdcall*)(HMODULE))findImportedFunctionExtra(cleanup.proc, unscramble(vec, kernel32Name, kernel32Key), FreeLibraryVec.data());
-	if (!FreeLibraryPtr) {
-		WinError winErr;
-		std::wcout << L"Failed to find free library function in the process.\n";
-		return false;
-	}
-	#else
-	// I know the address is always the same
-	// I'm trying to throw off sigscans
-	FreeLibraryPtr = (BOOL(__stdcall*)(HMODULE))GetProcAddress(kernel32, unscramble(vec, FreeLibraryName, FreeLibraryKey));
-	#endif
-	
-	HANDLE newThread = (*CreateRemoteThreadPtr)(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)((DWORD)FreeLibraryPtr), (LPVOID)modBaseAddr, 0, nullptr);
-	if (newThread == INVALID_HANDLE_VALUE || newThread == NULL) {
-		WinError winErr;
-		std::wcout << L"Failed to create remote thread: " << winErr << std::endl;
-		return false;
-	}
-	cleanup.addHandle(newThread);
-	
-	std::cout << "Uninjecting...\n";
-	WaitForSingleObjectPtr = (DWORD(__stdcall*)(HANDLE,DWORD))GetProcAddress(kernel32, unscramble(vec, WaitForSingleObjectName, WaitForSingleObjectKey));
-	DWORD waitResult = (*WaitForSingleObjectPtr)(newThread, INFINITE);
-	if (waitResult == WAIT_OBJECT_0) {
-		DWORD exitCode = 0;
-		GetExitCodeThreadPtr = (BOOL (__stdcall*)(HANDLE, LPDWORD))GetProcAddress(kernel32, unscramble(vec, GetExitCodeThreadName, GetExitCodeThreadKey));
-		if (!(*GetExitCodeThreadPtr)(newThread, &exitCode)) {
-			WinError winErr;
-			std::wcout << L"Failed to get the exit code of the uninjecting thread: " << winErr << L'\n'
-				<< L"Uninjection probably failed.\n";
-			return false;
-		} else if (exitCode == 0) {
-			std::cout << "Uninjection failed.\n";
-			return false;
-		} else {
-			std::cout << "Uninjected successfully. You can launch this injector again to inject back the DLL.\n";
-			return true;
-		}
-	} else if (waitResult == WAIT_FAILED) {
-		WinError winErr;
-		std::wcout << "Failed to wait for the injected thread: " << winErr << std::endl;
-		return false;
-	} else {
-		std::wcout << "The wait for the injected thread returned: " << waitResult << std::endl;
-		return false;
-	}
-}
-
-bool injectOrUninject(DWORD pid) {
-	std::wstring lineContents;
-	
-	Cleanup cleanup;
-	
-	std::vector<char> vec;
-	
-	if (!kernel32) {
-		kernel32 = LoadLibraryA(unscramble(vec, kernel32Name, kernel32Key));
-	}
-	OpenProcessPtr = (HANDLE (__stdcall*)(DWORD, BOOL, DWORD))GetProcAddress(kernel32, unscramble(vec, OpenProcessName, OpenProcessKey));
-	
-	vec.resize(4);
-	
-	DWORD value = PROCESS_ALL_ACCESS;
-	memcpy(vec.data(), &value, 4);
-	scramble(vec, 21984234);
-	scramble(vec, 21984234);
-	DWORD access = *(DWORD*)vec.data();
-	
-	memcpy(vec.data(), &pid, 4);
-	scramble(vec, 894583);
-	scramble(vec, 894583);
-	DWORD arg3 = *(DWORD*)vec.data();
-	
-	HANDLE proc = (*OpenProcessPtr)(access, FALSE, arg3);
-	if (proc == NULL || proc == INVALID_HANDLE_VALUE) {
-		WinError err;
-		std::wcout << L"Failed to open process: " << err;
-		return false;
-	}
-	cleanup.addHandle(proc);
-	
-	DWORD modBaseAddr = findModuleUsingEnumProcesses(pid, dll);
-	if (modBaseAddr) {
-		std::wcout << L"The " << dll << " is already injected into the process (0x" << std::hex << modBaseAddr << std::dec << L")."
-			L" Do you want to uninject it? (Type y/n and press Enter):\n";
-		while (true) {
-			if (!force) {
-				std::getline(std::wcin, lineContents);
-			} else {
-				std::cout << "Force Y\n";
-			}
-			if (force || lineContents == L"y" || lineContents == L"Y") {
-				return uninject(proc, modBaseAddr);
-			} else if (lineContents == L"n" || lineContents == L"N") {
-				std::cout << "The DLL won't be loaded a second time. No action will be taken.\n";
-				return true;
-			} else {
-				std::cout << "Please type y or n and press Enter.\n";
-			}
-		}
-	} else {
-		std::wcout << "The " << dll << " is not yet loaded into the application. Do you want to load it? (Type y/n and press Enter):\n";
-		while (true) {
-			if (!force) {
-				std::getline(std::wcin, lineContents);
-			} else {
-				std::cout << "Force Y\n";
-			}
-			if (force || lineContents == L"y" || lineContents == L"Y") {
-				return inject(proc);
-			} else if (lineContents == L"n" || lineContents == L"N") {
-				std::cout << "The DLL won't be loaded.\n";
-				return true;
-			} else {
-				std::cout << "Please type y or n and press Enter.\n";
-			}
-		}
-	}
-	return false;
-}
-
-int wmain(int argc, wchar_t** argv)
-{
-	startTime = GetTickCount64();
+// this was once a console app
+// injectorMain was called main
+// outputObject was instead std::wcout
+// GetLine was a std::readline(std::wcin, str);
+int injectorMain() {
 	
 	std::vector<char> vec;
 	const char* txt = unscramble(vec, ExeName, ExeKey);
@@ -836,62 +777,58 @@ int wmain(int argc, wchar_t** argv)
 	}
 	*dest = L'\0';
 	
-	for (int i = 0; i < argc; ++i) {
-		if (_wcsicmp(*argv, L"-force") == 0) {
-			force= true;
-		} else if (_wcsicmp(*argv, L"/?") == 0
-				|| _wcsicmp(*argv, L"--help") == 0
-				|| _wcsicmp(*argv, L"-help") == 0) {
-			std::wcout << "Info: This program injects the '" << dll << "' DLL into the " << exe << L" process."
-				" Use -force option to not request any input from the user.\n";
-			return 0;
+	outputObject << L"This program will look for " << exe << L" process and inject the " << dll << L" into it.\n"
+		<< L"The DLL must be in the same folder as this injector in order for this to work.\n"
+		<< L"Only Guilty Gear Xrd Rev2 version 2211 supported.\n";
+	
+	std::wstring ignoreLine;
+	bool success;
+	DWORD procId;
+	if (force) {
+		outputObject << L"Waiting for Guilty Gear Xrd's window to open. Press "
+			// I could not find a way to reliably non-blockingly peek into stdin, so no timeoutable "press any key" on the commandline
+			// PeekConsoleInput is a garbage glitchy nightmare that reports key down events even when no keys are pressed
+			// Windows commandline is blocking, we just have to live with that
+			#ifndef ANY_KEY
+			<< L"Ctrl+C"
+			#else
+			<< ANY_KEY
+			#endif
+			<< " to exit...\n";
+		pressAnyKeyBegin();
+		while (true) {
+			if (isAnyKeyPressed()) {
+				pressAnyKeyEnd();
+				outputObject << L"Terminated by the user.\n";
+				success = true;
+				break;
+			}
+			procId = findOpenGgProcess();
+			if (procId) {
+				outputObject << "Found PID: " << procId << '\n';
+				pressAnyKeyEnd();
+				success = injectorTask(procId);
+				break;
+			}
+			Sleep(333);
 		}
-		++argv;
+	} else {
+		outputObject << L"Press Enter to continue...\n";
+		GetLine(ignoreLine);
+		procId = findOpenGgProcess();
+		if (!procId) {
+			outputObject << L"Process with the name '" << exe << "' not found. Launch Guilty Gear and then try again.\n";
+			success = false;
+		} else {
+			success = injectorTask(procId);
+		}
 	}
 	
-	std::wcout << "This program will inject the '" << dll << "' DLL into the " << exe << " process."
-		" Make sure this injector and its DLL are located in the same folder.\n\n"
-		"Waiting for Guilty Gear Xrd's window to open. Press any key to exit...\n";
-	
-	INPUT_RECORD records[10];
-	HANDLE stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
-    while (true) {
-    	DWORD eventsRead;
-    	if (GetTickCount64() - startTime < 1000) {
-    		eventsRead = 0;
-    	} else if (!PeekConsoleInputW(stdInHandle, records, 10, &eventsRead)) {  // thanks, stdlib, for NOT having a non-blocking std::cin.peek
-    		WinError err;
-    		
-    		std::cout << "Failed to call PeekConsoleInputW:\n"
-    			<< "0x" << std::hex << err.code << std::dec << " ";
-    		std::wcout << err.message << std::endl;
-    		
-    		return 1;
-    	}
-    	for (DWORD i = 0; i < eventsRead; ++i) {
-    		const INPUT_RECORD& record = records[i];
-    		if (record.EventType == KEY_EVENT
-    				&& record.Event.KeyEvent.uChar.AsciiChar != 9  // TAB, as in Alt+TAB
-    				&& record.Event.KeyEvent.wVirtualKeyCode != VK_CONTROL
-    				&& record.Event.KeyEvent.wVirtualKeyCode != VK_LCONTROL
-    				&& record.Event.KeyEvent.wVirtualKeyCode != VK_RCONTROL) {
-    			return 0;
-    		}
-    	}
-    	DWORD procId = findOpenGgProcess();
-    	if (procId) {
-    		std::cout << "Found PID: " << procId << '\n';
-    		bool success = injectOrUninject(procId);
-    		
-    		if (!force || !success) {
-	    		std::cout << "Press Enter to exit...\n";
-	    		std::wstring ignoreLine;
-	    		std::getline(std::wcin, ignoreLine);
-    		}
-    		return success ? 0 : 2;
-    	}
-    	Sleep(333);
-    }
+	if (!success || !force) {
+		outputObject << L"Press Enter to exit...\n";
+		GetLine(ignoreLine);
+	}
+	return 0;
 }
 
 // Finds if GuiltyGearXrd.exe is currently open and returns the ID of its process
@@ -911,4 +848,38 @@ DWORD findOpenGgProcess() {
     		GetProcAddress(user32, unscramble(vec, GetWindowThreadProcessIdName, GetWindowThreadProcessIdKey));
     (*GetWindowThreadProcessIdPtr)(foundGgWindow, &windsProcId);
     return windsProcId;
+}
+
+bool forceAllowed = true;
+UINT windowAppTitleResourceId = IDS_APP_TITLE;
+UINT windowClassNameResourceId = IDC_GGXRDDISPLAYPINGINJECTOR;
+LPCWSTR windowIconId = MAKEINTRESOURCEW(IDI_GGXRDDISPLAYPINGINJECTOR);
+LPCWSTR windowMenuName = MAKEINTRESOURCEW(IDC_GGXRDDISPLAYPINGINJECTOR);
+LPCWSTR windowAcceleratorId = MAKEINTRESOURCEW(IDC_GGXRDDISPLAYPINGINJECTOR);
+
+bool parseArgs(int argc, LPWSTR* argv, int* exitCode) {
+	for (int i = 0; i < argc; ++i) {
+		if (_wcsicmp(argv[i], L"/?") == 0
+				|| _wcsicmp(argv[i], L"--help") == 0
+				|| _wcsicmp(argv[i], L"-help") == 0) {
+			MessageBoxA(NULL,
+				"Injector for GGXrdDisplayPing for Guilty Gear Xrd Rev2 version 2211."
+				" Arguments:\n"
+				" <None> - launch a window in interactive mode.\n"
+				" -force - attempt to inject silently.",
+				"GGXrdDisplayPing " VERSION,
+				MB_OK);
+			*exitCode = 0;
+			return false;
+		} else if (_wcsicmp(argv[i], L"-force") == 0) {
+			force = true;
+		}
+	}
+	return true;
+}
+
+unsigned long __stdcall taskThreadProc(LPVOID unused) {
+	unsigned long result = injectorMain();
+	PostMessageW(mainWindow, WM_TASK_ENDED, 0, 0);
+	return result;
 }
