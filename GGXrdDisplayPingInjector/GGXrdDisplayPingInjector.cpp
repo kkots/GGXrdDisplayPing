@@ -598,7 +598,7 @@ bool injectorTask(DWORD procId) {
 	}
 	if ((*GetModuleFileNameExWPtr)(cleanup.proc, nullptr, path, MAX_PATH) == 0) {
 		WinError winErr;
-		outputObject << L"Failed to get path of the process's executable: " << winErr << std::endl;
+		outputObject << L"Failed to get the path of the process' executable: " << winErr << std::endl;
 		return false;
 	}
 	const wchar_t* ptr = nullptr;

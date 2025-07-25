@@ -8,8 +8,6 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-// 3) Add a script that sits in the Debug/Release folders, checks if each executable or .dll file is signed, and signs it if it isn't.
-// 6) Transition patcher to window mode, will probably have to do something very similar.
 
 #define MAX_LOADSTRING 100
 
