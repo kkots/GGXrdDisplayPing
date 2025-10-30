@@ -100,6 +100,15 @@ char GetWindowThreadProcessIdName[] = "\x06\x50\xb6\xef\xb8\x4d\xf8\xf9\x1a\x88\
 ULONGLONG GetWindowThreadProcessIdKey = 0x2bd500006949ULL;
 DWORD (__stdcall*GetWindowThreadProcessIdPtr)(HWND, LPDWORD) = nullptr;
 
+char WaitForSingleObjectName[] = "\xf6\xd0\x85\xc4\x45\x72\xba\xbc\x96\xb1\x9b\x4f\x5b\x09\x76\x76\xd8\x8c\x3b";  // WaitForSingleObject
+ULONGLONG WaitForSingleObjectKey = 0x0000316c000072eaULL;
+DWORD (__stdcall*WaitForSingleObjectPtr)(HANDLE, DWORD) = nullptr;
+
+char GetExitCodeThreadName[] = "\x9e\xb2\xe8\x92\x85\x92\x8b\xf0\xbc\x92\x92\xa2\xe1\xad\x06\x99\x9a";
+ULONGLONG GetExitCodeThreadKey = 0x000017ca00007cd6ULL;
+BOOL (__stdcall*GetExitCodeThreadPtr)(HANDLE, LPDWORD);
+
+
 // this is for your use at home
 unsigned long long generateNewKey() {
 	static bool sranded = false;
@@ -748,8 +757,42 @@ bool injectorTask(DWORD procId) {
 		return false;
 	}
 	cleanup.handlesToClose.push_back(newThread);
-	outputObject << L"Injected successfully. You can launch this injector again to unload the DLL.\n";
-	return true;
+	
+	WaitForSingleObjectPtr = (DWORD (__stdcall*)(HANDLE, DWORD))
+			GetProcAddress(kernel32, unscramble(vec, WaitForSingleObjectName, WaitForSingleObjectKey));
+	
+	outputObject << L"Waiting for injection to finish...\n";
+	DWORD waitResult = (*WaitForSingleObjectPtr)(newThread, INFINITE);
+	if (waitResult == WAIT_OBJECT_0) {
+		GetExitCodeThreadPtr = (BOOL (__stdcall*)(HANDLE, LPDWORD))
+			GetProcAddress(kernel32, unscramble(vec, GetExitCodeThreadName, GetExitCodeThreadKey));
+		DWORD exitCode = 0;
+		if ((*GetExitCodeThreadPtr)(newThread, &exitCode) == 0) {
+			WinError winErr;
+			outputObject << L"Failed to get the exit code of the thread that was supposed to inject the DLL: "
+				<< winErr.getMessage() << std::endl;
+			return false;
+		}
+		if (exitCode != 0) {
+			// on success, LoadLibrary returns a handle to the module, but that handle, as I noticed every time, is the base address of the module
+			modBaseAddr = findModuleUsingEnumProcesses(procId, dll);
+			if (modBaseAddr == exitCode) {
+				outputObject << L"Injected successfully. You can launch this injector again to unload the DLL.\n";
+				return true;
+			} else if (modBaseAddr) {
+				outputObject << "Noticed that the mod's DLL is present in the game, maybe it got injected correctly.\n";
+			}
+		}
+		outputObject << L"Injection possibly failed. Exit code of the injection thread: 0x" << std::hex << exitCode << std::dec << std::endl;
+		return false;
+	} else if (waitResult == WAIT_FAILED) {
+		WinError winErr;
+		outputObject << L"Failed to wait for the injection to finish: " << winErr.getMessage() << std::endl;
+		return false;
+	} else {
+		outputObject << L"Failed to wait for the injection to finish. Wait result: 0x" << std::hex << waitResult << std::dec << std::endl;
+		return false;
+	}
 }
 
 // this was once a console app

@@ -62,3 +62,5 @@ On Linux, the game usually can be found in `~/.steam/root/steamapps/common/GUILT
 2025 March 4: Version 1.1: Made changes to the injector to reduce the risk of being flagged as malware by Windows Defender. Made 64-bit injector work (was not working previously).
 
 2025 March 8: Version 1.2: Removed the command-line version of the injector and replaced it with a desktop window based version, in order to trigger Windows Defender less often.
+
+2025 October 30: Version 1.3: Fixed a crash in the Xrd process that happens due to memory holding the "GGXrdDisplayPing.dll" string being freed by the injector too early.
